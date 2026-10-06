@@ -62,6 +62,18 @@ profiles = [{
   }
 ]
 
+notes = [
+    {"id":1,"text":"update new services", "purpose":"more effective system", "lead":None, "profile":1}
+]
+
+context = []
+
+def get_id_for_lead_by_list(arr):
+    arr_result = []
+    for lead in arr:
+        arr_result.append(lead["id"])
+    if len(arr_result) != 0:return arr_result
+    else: abort(404)
 
 def find_max_id(arr):
     max = -1
@@ -75,10 +87,21 @@ def get_colums_for_profile(data):
     stack,experience,description,can_solve,url_resume,portfolio,success_score = data["stack"],data["experience"],data["description"],data["can_solve"],data["url_resume"],data["portfolio"],data["success_score"]
     return stack,experience,description,can_solve,url_resume,portfolio,success_score
 
+def find_profile_index_by_id(profile_id):
+    for profile in profiles:
+        if profile["id"] == profile_id:
+            return profiles.index(profile)
+    abort(400)
+
 def find_lead_index(lead_id):
     for lead in leads:
         if lead["id"] == lead_id:
             return leads.index(lead)
+
+def find_note_index(note_id):
+    for note in notes:
+        if note["id"] == note_id:
+            return notes.index(note)
 
 def get_columns_for_leads(data):
     source_id,text,url,author,source,title,score,group=data["source_id"],data["text"],data["url"],data["author"],data["source"],data["title"],data["score"],data["group"]
@@ -201,6 +224,87 @@ def create_profile():
     stack,experience,description,can_solve,url_resume,portfolio,success_score = get_colums_for_profile(data)
     profiles.append({"id":find_max_id(profiles)+1, "stack":stack, "experience":experience, "description":description, "can_solve":can_solve, "url_resume":url_resume,"portfolio":portfolio, "success_score":success_score})
     return {"message":"new profile was inserted"}
+
+@app.route('/profile/<int:profile_id>', methods=["DELETE"])
+def delete_profile(profile_id):
+    profiles.pop(find_profile_index_by_id(profile_id))
+    return {"message":"the profile was deleted"}
+
+@app.route('/profile/<int:profile_id>', methods=["PUT"])
+def change_profile(profile_id):
+    idx = find_profile_index_by_id(profile_id)
+    data = request.get_json()
+    if profiles[idx]["id"] == profile_id:
+        data.id = profile_id
+        profiles[idx].update(data)
+        return {"message":"profile was updated"}
+    abort(400)
+             
+@app.route('/choose')
+def choose_lead():
+    data = request.get_json()
+    for lead in data:
+        for lead_db in leads:
+            if lead["id"] == lead_db["id"]:
+                context.append(lead)
+                break
+    if len(context) == 0: abort(400)
+    else: return context
+
+@app.route('/share')
+def share_leads():
+    urls = []
+    idxs = get_id_for_lead_by_list(request.get_json())
+    if len(context) != 0:
+        for lead in leads:
+            if lead["id"] in idxs:
+                urls.append(f'http://127.0.0.1:5000/leads/{lead["id"]}')
+        return urls
+    else: abort(400)
+
+@app.route('/notes', methods=["GET"])
+def get_notes():
+    if len(notes) != 0: return notes
+    else: return {"message":"there is no notes"}
+
+@app.route('/notes/<int:note_id>', methods=["GET"])
+def get_note_by_id(note_id):
+    for note in notes:
+        if note["id"] == note_id:
+            return note
+    abort(404)
+
+def find_max_note_id():
+    max = -1
+    for note in notes:
+        if note["id"] > max:
+            max = note["id"]
+    if max!=-1:
+        return max
+    abort(404)
+
+@app.route('/notes', methods=["POST"])
+def write_a_note():
+    data = request.get_json()
+    text,purpose,lead,profile = data["text"],data["purpose"],data["lead"],data["profile"]
+    notes.append({"id":find_max_note_id+1,"purpose":purpose,"lead":lead,"profile":profile})
+    return {"message":"your note was written"}
+
+@app.route('/notes/<int:note_id>', methods=["DELETE"])
+def complete_note(note_id):
+    idx = find_note_index(note_id)
+    notes.pop(idx)
+    return {"message":"your note was completed"}
+
+@app.route('/notes/<int:note_id')
+def change_note(note_id):
+    data = request.get_json()
+    idx = find_note_index(note_id)
+    if notes[idx]["id"] == note_id:
+        data["id"] = note_id
+        notes[idx].update(data)
+        return {"message":"your not was updated"}
+    abort(400)
 
 if __name__ == "__main__":
     app.run(debug=True)
