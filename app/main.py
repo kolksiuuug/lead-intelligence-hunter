@@ -63,7 +63,7 @@ profiles = [{
 ]
 
 notes = [
-    {"id":1,"text":"update new services", "purpose":"more effective system", "lead":None, "profile":1}
+    {"id":1,"text":"update new services", "purpose":"more effective system", "leads":[None, 1, 2], "profile":1}
 ]
 
 context = []
@@ -75,13 +75,28 @@ def get_id_for_lead_by_list(arr):
     if len(arr_result) != 0:return arr_result
     else: abort(404)
 
+def find_max_note_id():
+    max = -1
+    for note in notes:
+        if note["id"] > max:
+            max = note["id"]
+    return max if max != -1 else 0
+
 def find_max_id(arr):
     max = -1
     for i in arr:
         if max < i["id"]:
             max = i["id"]
     if max != -1: return max
-    else: return {"error":"no content"}, 204
+    else: return {"error":"no content"}, 404
+
+def return_leads_to_notes(note_leads):
+    results = []
+    for lead in note_leads:
+        for lead_db in leads:
+            if lead_db["id"] == lead:
+                results.append({"id":lead_db["id"],"author":lead_db["author"],"text":lead_db["text"]})
+    return results
 
 def get_colums_for_profile(data):
     stack,experience,description,can_solve,url_resume,portfolio,success_score = data["stack"],data["experience"],data["description"],data["can_solve"],data["url_resume"],data["portfolio"],data["success_score"]
@@ -91,17 +106,19 @@ def find_profile_index_by_id(profile_id):
     for profile in profiles:
         if profile["id"] == profile_id:
             return profiles.index(profile)
-    abort(400)
+    abort(404)
 
 def find_lead_index(lead_id):
     for lead in leads:
         if lead["id"] == lead_id:
             return leads.index(lead)
+    abort(400)
 
 def find_note_index(note_id):
     for note in notes:
         if note["id"] == note_id:
             return notes.index(note)
+    abort(400)
 
 def get_columns_for_leads(data):
     source_id,text,url,author,source,title,score,group=data["source_id"],data["text"],data["url"],data["author"],data["source"],data["title"],data["score"],data["group"]
@@ -225,22 +242,39 @@ def create_profile():
     profiles.append({"id":find_max_id(profiles)+1, "stack":stack, "experience":experience, "description":description, "can_solve":can_solve, "url_resume":url_resume,"portfolio":portfolio, "success_score":success_score})
     return {"message":"new profile was inserted"}
 
+'''curl -X POST http://127.0.0.1:5000/profile \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stack": "Python, Data Science",
+    "experience": "3 years",
+    "description": "Data Scientist specializing in ML",
+    "can_solve": "classification, regression, anomaly detection",
+    "url_resume": "https://example.com/resume",
+    "portfolio": "https://github.com/example",
+    "success_score": 0.92
+  }'''
+
 @app.route('/profile/<int:profile_id>', methods=["DELETE"])
 def delete_profile(profile_id):
     profiles.pop(find_profile_index_by_id(profile_id))
     return {"message":"the profile was deleted"}
+#curl -X DELETE http://127.0.0.1:5000/profile/3
+
 
 @app.route('/profile/<int:profile_id>', methods=["PUT"])
 def change_profile(profile_id):
     idx = find_profile_index_by_id(profile_id)
     data = request.get_json()
     if profiles[idx]["id"] == profile_id:
-        data.id = profile_id
+        data["id"] = profile_id
         profiles[idx].update(data)
         return {"message":"profile was updated"}
     abort(400)
-             
-@app.route('/choose')
+'''curl -X PUT http://127.0.0.1:5000/profile/2 \
+  -H "Content-Type: application/json" \
+  -d '{"stack": "Pytdfdffdhon", "experience": "15 years"}'''
+
+@app.route('/choose', methods=["POST"])
 def choose_lead():
     data = request.get_json()
     for lead in data:
@@ -250,53 +284,66 @@ def choose_lead():
                 break
     if len(context) == 0: abort(400)
     else: return context
+'''curl -X POST http://127.0.0.1:5000/choose \
+  -H "Content-Type: application/json" \
+  -d '[{"id": 1}, {"id": 2}]'''
 
-@app.route('/share')
+@app.route('/share', methods=["POST"])
 def share_leads():
+    global context
+    if len(context) == 0:
+        abort(400)
     urls = []
-    idxs = get_id_for_lead_by_list(request.get_json())
-    if len(context) != 0:
-        for lead in leads:
-            if lead["id"] in idxs:
-                urls.append(f'http://127.0.0.1:5000/leads/{lead["id"]}')
-        return urls
-    else: abort(400)
+    for lead in context:
+        urls.append(
+            f'http://127.0.0.1:5000/leads/{lead["id"]}'
+        )
+    context = []
+    return urls
+'''curl -X POST http://127.0.0.1:5000/share \ 
+  -H "Content-Type: application/json" \
+  -d '[{"id":1},{"id":2}]'''
 
 @app.route('/notes', methods=["GET"])
 def get_notes():
     if len(notes) != 0: return notes
-    else: return {"message":"there is no notes"}
+    else: return {"message":"there is no leads"}
+#http://127.0.0.1:5000/notes
 
 @app.route('/notes/<int:note_id>', methods=["GET"])
 def get_note_by_id(note_id):
+    results = []
     for note in notes:
         if note["id"] == note_id:
-            return note
+            results.append(note) #индекс 0 - note
+            results.append(return_leads_to_notes(note["leads"]))
+            return results
     abort(404)
-
-def find_max_note_id():
-    max = -1
-    for note in notes:
-        if note["id"] > max:
-            max = note["id"]
-    if max!=-1:
-        return max
-    abort(404)
+#http://127.0.0.1:5000/notes/1
 
 @app.route('/notes', methods=["POST"])
 def write_a_note():
     data = request.get_json()
-    text,purpose,lead,profile = data["text"],data["purpose"],data["lead"],data["profile"]
-    notes.append({"id":find_max_note_id+1,"purpose":purpose,"lead":lead,"profile":profile})
+    text,purpose,leads,profile = data["text"],data["purpose"],data["leads"],data["profile"]
+    notes.append({"id":find_max_note_id()+1,"purpose":purpose,"leads":leads,"profile":profile,"text":text})
     return {"message":"your note was written"}
+"""curl -X POST http://127.0.0.1:5000/notes \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Позвонить потенциальному клиенту",
+    "purpose": "Первичный контакт",
+    "leads": [1, 2],
+    "profile": 1
+  }'"""
 
 @app.route('/notes/<int:note_id>', methods=["DELETE"])
 def complete_note(note_id):
     idx = find_note_index(note_id)
     notes.pop(idx)
     return {"message":"your note was completed"}
+#curl -X DELETE http://127.0.0.1:5000/notes/1
 
-@app.route('/notes/<int:note_id')
+@app.route('/notes/<int:note_id>', methods=["PUT"])
 def change_note(note_id):
     data = request.get_json()
     idx = find_note_index(note_id)
@@ -305,6 +352,21 @@ def change_note(note_id):
         notes[idx].update(data)
         return {"message":"your not was updated"}
     abort(400)
+"""curl -X PUT http://127.0.0.1:5000/notes/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Обновленный текст",
+    "purpose": "Новый purpose",
+    "leads": [2, 3],
+    "profile": 1
+  }'"""
+
+
+@app.route('/stats')
+def get_all_stats():
+    count_leads,count_profiles,count_notes=len(leads),len(profiles),len(notes)
+    return [count_leads, count_profiles, count_notes]
+#http://127.0.0.1/stats
 
 if __name__ == "__main__":
     app.run(debug=True)

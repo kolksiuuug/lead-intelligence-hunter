@@ -14,4 +14,10 @@ def error_handler(app):
     def too_many_requests(error):return jsonify({"error":"too many requests", "message":"your messages are too fast"}, 429)
 
     @app.errorhandler(502)
-    def timeout(error):return jsonify({"error":"backend timeout"})
+    def timeout(error):return jsonify({"error":"backend timeout"}, 502)
+
+    @app.errorhandler(405)
+    def method_not_allowed(error):return jsonify({"error":"method not allowed"}, 405)
+
+    @app.errorhandler(415)
+    def unsupported_type(error):return jsonify({"error":"unsupported type"}, 415)
