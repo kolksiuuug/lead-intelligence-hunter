@@ -1,128 +1,23 @@
+from sqlalchemy import or_
+import os
+from app.services.normalize import normalize_url
 from flask import Flask
+from flask_migrate import Migrate
 from flask import request
-from error_handlers.handler import error_handler
+from app.error_handlers.handler import error_handler
 from flask import abort
+from app.db import db
+from app.models import Lead,Profile,Note
+from app.services.lead_service import save_lead
+from app.services.smart_parser import note_to_dict,lead_to_dict,profile_to_dict,get_columns_for_leads,get_colums_for_profile
 app = Flask(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = f'postgresql+psycopg://{os.environ["POSTGRES_USER"]}:{os.environ["POSTGRES_PASSWORD"]}@db:5432/{os.environ["POSTGRES_DB"]}'
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db.init_app(app)
+migrate = Migrate(app, db)
 error_handler(app)
 
-leads = [{
-  "id": 1,
-  "source": "reddit",
-  "source_id": "abc123",
-  "title": "Someone is looking for a security tool",
-  "text": "I need a tool that...",
-  "url": "https://example.com/post/123",
-  "author": "user123",
-  "score": 0.87,
-  "group":"2"
-  },
-  {
-  "id": 2,
-  "source": "fff",
-  "source_id": "sss",
-  "title": "security new",
-  "text": "I need a lang that...",
-  "url": "https://example.com/post/433",
-  "author": "user33323",
-  "score": 0.27,
-  "group":"1"
-  },
-  {
-    "id": 3,
-    "source": "fff",
-    "source_id": "dfd",
-    "title": "dfggfd",
-    "text": "fgdgdf",
-    "url": "fdgdgf",
-    "author": "23232",
-    "score": 0.17,
-    "group":"1"
-    }
-]
-
-profiles = [{
-  "id": 1,
-  "stack": "Javascript",
-  "experience": "1 year",
-  "description": "new_subject",
-  "can_solve": "all ml problems",
-  "url_resume": "https://example.com/resume",
-  "portfolio": "hackerone_cases",
-  "success_score": 0.60
-  },
-  {
-  "id": 2,
-  "stack": "PHP",
-  "experience": "7 years",
-  "description": "old_expert",
-  "can_solve": "backend problems",
-  "url_resume": "https://hello.com/resume_main",
-  "portfolio": "avito_expert",
-  "success_score": 0.90
-  }
-]
-
-notes = [
-    {"id":1,"text":"update new services", "purpose":"more effective system", "leads":[None, 1, 2], "profile":1}
-]
-
 context = []
-
-def get_id_for_lead_by_list(arr):
-    arr_result = []
-    for lead in arr:
-        arr_result.append(lead["id"])
-    if len(arr_result) != 0:return arr_result
-    else: abort(404)
-
-def find_max_note_id():
-    max = -1
-    for note in notes:
-        if note["id"] > max:
-            max = note["id"]
-    return max if max != -1 else 0
-
-def find_max_id(arr):
-    max = -1
-    for i in arr:
-        if max < i["id"]:
-            max = i["id"]
-    if max != -1: return max
-    else: return {"error":"no content"}, 404
-
-def return_leads_to_notes(note_leads):
-    results = []
-    for lead in note_leads:
-        for lead_db in leads:
-            if lead_db["id"] == lead:
-                results.append({"id":lead_db["id"],"author":lead_db["author"],"text":lead_db["text"]})
-    return results
-
-def get_colums_for_profile(data):
-    stack,experience,description,can_solve,url_resume,portfolio,success_score = data["stack"],data["experience"],data["description"],data["can_solve"],data["url_resume"],data["portfolio"],data["success_score"]
-    return stack,experience,description,can_solve,url_resume,portfolio,success_score
-
-def find_profile_index_by_id(profile_id):
-    for profile in profiles:
-        if profile["id"] == profile_id:
-            return profiles.index(profile)
-    abort(404)
-
-def find_lead_index(lead_id):
-    for lead in leads:
-        if lead["id"] == lead_id:
-            return leads.index(lead)
-    abort(400)
-
-def find_note_index(note_id):
-    for note in notes:
-        if note["id"] == note_id:
-            return notes.index(note)
-    abort(400)
-
-def get_columns_for_leads(data):
-    source_id,text,url,author,source,title,score,group=data["source_id"],data["text"],data["url"],data["author"],data["source"],data["title"],data["score"],data["group"]
-    return source_id,text,url,author,source,title,score,group
 
 @app.route('/')
 def home():
@@ -131,16 +26,28 @@ def home():
 
 @app.route("/leads", methods=["GET"])
 def get_leads():
-    return leads
+    leads = Lead.query.all()
+    return [
+        {"id": lead.id,
+        "source": lead.source,
+        "title": lead.title,
+        "text": lead.text,
+        "url": lead.url,
+        "author": lead.author,
+        "score": lead.score,
+        "group": lead.group_name} for lead in leads
+    ]
 #http://127.0.0.1:5000/leads
 
 @app.route('/leads', methods=["POST"])
 def create_lead():
     data = request.get_json()
-    source_id, text, url, author, source, title, score, group = get_columns_for_leads(data)
-    leads.append({"id":leads[-1]["id"]+1, "source":source, "source_id":source_id, "title":title, "text":text, "url":url, "author":author, "score":score, "group":group})
-    return {"message":"lead was inserted", "your lead":leads[-1]}
-'''curl -X POST http://127.0.0.1:5000/leads \
+    lead,result = save_lead(data)
+    if result["message"] == "lead was created": return lead_to_dict(lead), 201
+    return {"message":f"лид с id:{lead_to_dict(lead)['id']} - был обновлен"}
+    
+
+r'''curl -X POST http://127.0.0.1:5000/leads \
   -H "Content-Type: application/json" \
   -d '{
     "source_id": "reddit_123",
@@ -155,10 +62,9 @@ def create_lead():
 
 @app.route('/leads/<int:lead_id>')
 def get_lead(lead_id):
-    for lead in leads:
-        if lead["id"] == lead_id:
-            return lead
-    abort(404)
+    lead = db.session.get(Lead, lead_id)
+    if lead is None: abort(404)
+    return lead_to_dict(lead)
 #http://127.0.0.1:5000/leads/3
 
 @app.route("/health")
@@ -169,14 +75,21 @@ def get_health():
 @app.route('/leads/<int:lead_id>', methods=["PUT"])
 def update_lead(lead_id):
     data = request.get_json()
-    for lead in leads:
-        if lead["id"] == lead_id:
-            data["id"] = lead_id
-            lead.update(data)
-            return {"message": "lead was updated", "lead": lead}
-    abort(404)
+    lead = db.session.get(Lead, lead_id)
+    if lead is None: abort(404)
+    lead.source_id = data.get("source_id", lead.source_id)
+    lead.source = data.get("source", lead.source)
+    lead.text = data.get("text", lead.text)
+    lead.author = data.get("author", lead.author)
+    lead.url = normalize_url(data.get("url", lead.url))
+    lead.score = data.get("score", lead.score)
+    lead.group_name = data.get("group", lead.group_name)
+    lead.title = data.get("title", lead.title)
+    db.session.commit()
+    return lead_to_dict(lead), 200
 
-"""
+
+r"""
 curl -X PUT http://127.0.0.1:5000/leads/1 -H "Content-Type: application/json" -d '{"id":1,
     "source_id": "reddit_123",
     "text": "I am looking for a security monitoring tool",
@@ -191,9 +104,11 @@ curl -X PUT http://127.0.0.1:5000/leads/1 -H "Content-Type: application/json" -d
 
 @app.route('/leads/<int:lead_id>', methods=["DELETE"])
 def delete_lead(lead_id):
-    idx = find_lead_index(lead_id)
-    if idx is not None: leads.pop(idx); return {"message":f'lead number {lead_id} was deleted'}
-    else: abort(400)
+    lead = db.session.get(Lead, lead_id)
+    if lead is None: abort(404)
+    db.session.delete(lead)
+    db.session.commit()
+    return {"message":f"your lead {lead_id} was deleted"}, 200
 #curl -X DELETE http://127.0.0.1:5000/leads/1
 
 @app.route('/leads/search')
@@ -201,48 +116,46 @@ def search_leads():
     data = request.json()
     score = get_columns_for_leads(data)[-1]
     #ml reading i do for score but we need context too
-    after_search = []
-    for lead in leads:
-        if lead["score"] >= score:
-            after_search.append(lead)
-    if len(after_search) > 0: return after_search
-    else: abort(404)
+    return 0
 #no
-
+#--------------------------------------------------------
 @app.route('/filter', methods=["GET"])
 def filter_leads_by_param():
     param = request.args.get('context')
-    if param == None: return {"error":"bad request< there is not context param in url"}, 400
-    result = []
-    for lead in leads:
-        source_id,text,url,author,source,title,score,group = get_columns_for_leads(lead)
-        params = [source_id,text,url,author,source,title,score,group]
-        if param in params: result.append(lead)
-    if len(result)!=0: return result
-    else: abort(404)
+    min_score = request.args.get("min_score", type=float)
+    if param is None: return {"error":"bad request< there is not context param in url"}, 400
+    query = Lead.query.filter(or_(Lead.source==param,Lead.group_name.ilike(f"%{param}%"), Lead.author.ilike(f"%{param}%"), Lead.text.ilike(f"%{param}%"), Lead.title.ilike(f"%{param}%"), Lead.url.ilike(f"%{param}%")))
+    if min_score is not None:
+        query = query.filter(Lead.score >= min_score)
+    result = query.all()
+    if not result: abort(404)
+    return [lead_to_dict(lead) for lead in result], 200
 #http://127.0.0.1:5000/filter?context=user123
 
 @app.route('/profiles', methods=["GET"])
 def get_profiles():
-    return profiles
+    profiles = Profile.query.all()
+    if profiles is None: abort(404)
+    return [profile_to_dict(profile) for profile in profiles], 200
 #http://127.0.0.1:5000/profiles
 
 @app.route('/profile/<int:profile_id>', methods=["GET"])
 def get_profile(profile_id):
-    for profile in profiles:
-        if profile["id"] == profile_id:
-            return profile
-    abort(404)
+    profile = db.session.get(Profile, profile_id)
+    if profile is None: abort(404)
+    return profile_to_dict(profile), 200
 #http://127.0.0.1:5000/profile/1
 
 @app.route('/profile', methods=["POST"])
 def create_profile():
     data = request.get_json()
-    stack,experience,description,can_solve,url_resume,portfolio,success_score = get_colums_for_profile(data)
-    profiles.append({"id":find_max_id(profiles)+1, "stack":stack, "experience":experience, "description":description, "can_solve":can_solve, "url_resume":url_resume,"portfolio":portfolio, "success_score":success_score})
-    return {"message":"new profile was inserted"}
+    stack1,experience1,description1,can_solve1,url_resume1,portfolio1,success_score1 = get_colums_for_profile(data)
+    profile = Profile(stack=stack1, experience=experience1, description=description1, can_solve=can_solve1, url_resume=normalize_url(url_resume1), portfolio=normalize_url(portfolio1), success_score=success_score1)
+    db.session.add(profile)
+    db.session.commit()
+    return {"message":"your profile was written"}
 
-'''curl -X POST http://127.0.0.1:5000/profile \
+r'''curl -X POST http://127.0.0.1:5000/profile \
   -H "Content-Type: application/json" \
   -d '{
     "stack": "Python, Data Science",
@@ -256,78 +169,95 @@ def create_profile():
 
 @app.route('/profile/<int:profile_id>', methods=["DELETE"])
 def delete_profile(profile_id):
-    profiles.pop(find_profile_index_by_id(profile_id))
+    profile = db.session.get(Profile, profile_id)
+    if profile is None: abort(404)
+    db.session.delete(profile)
+    db.session.commit()
     return {"message":"the profile was deleted"}
 #curl -X DELETE http://127.0.0.1:5000/profile/3
 
 
 @app.route('/profile/<int:profile_id>', methods=["PUT"])
 def change_profile(profile_id):
-    idx = find_profile_index_by_id(profile_id)
     data = request.get_json()
-    if profiles[idx]["id"] == profile_id:
-        data["id"] = profile_id
-        profiles[idx].update(data)
-        return {"message":"profile was updated"}
-    abort(400)
-'''curl -X PUT http://127.0.0.1:5000/profile/2 \
+    profile = db.session.get(Profile, profile_id)
+    if profile is None: abort(404)
+    profile.stack = data.get("stack", profile.stack)
+    profile.experience = data.get("experience", profile.experience)
+    profile.description = data.get("description", profile.description)
+    profile.can_solve = data.get("can_solve", profile.can_solve)
+    profile.url_resume = data.get("url_resume", profile.url_resume)
+    profile.portfolio = data.get("portfolio", profile.portfolio)
+    profile.success_score = data.get("success_score", profile.success_score)
+    db.session.commit()
+    return {"message":"your profile was updated"}
+
+    
+r'''curl -X PUT http://127.0.0.1:5000/profile/2 \
   -H "Content-Type: application/json" \
   -d '{"stack": "Pytdfdffdhon", "experience": "15 years"}'''
 
 @app.route('/choose', methods=["POST"])
 def choose_lead():
     data = request.get_json()
-    for lead in data:
-        for lead_db in leads:
-            if lead["id"] == lead_db["id"]:
-                context.append(lead)
-                break
-    if len(context) == 0: abort(400)
-    else: return context
-'''curl -X POST http://127.0.0.1:5000/choose \
+    global context
+    if not isinstance(data, dict) or "id" not in data: abort(400)
+    ipd = data["id"]
+    lead = db.session.get(Lead, ipd)
+    if lead is None or ipd in context: abort(400)
+    context.append(ipd)
+    return {"message":"selected"}, 200
+
+r'''curl -X POST http://127.0.0.1:5000/choose \
   -H "Content-Type: application/json" \
   -d '[{"id": 1}, {"id": 2}]'''
 
 @app.route('/share', methods=["POST"])
 def share_leads():
     global context
-    if len(context) == 0:
-        abort(400)
     urls = []
+    if not context: return {"message":"leads did not selected"}, 400
     for lead in context:
         urls.append(
-            f'http://127.0.0.1:5000/leads/{lead["id"]}'
+            f'http://127.0.0.1:5000/leads/{lead}'
         )
     context = []
-    return urls
-'''curl -X POST http://127.0.0.1:5000/share \ 
-  -H "Content-Type: application/json" \
-  -d '[{"id":1},{"id":2}]'''
+    return {"urls":urls}, 200
+r'''curl -X POST http://127.0.0.1:5000/share \ 
+  -H "Content-Type: application/json"
+  -d '[{"id":1}]'''
 
 @app.route('/notes', methods=["GET"])
 def get_notes():
-    if len(notes) != 0: return notes
-    else: return {"message":"there is no leads"}
+    notes = Note.query.all()
+    if notes is None: abort(404)
+    return [note_to_dict(note) for note in notes], 200
 #http://127.0.0.1:5000/notes
 
 @app.route('/notes/<int:note_id>', methods=["GET"])
 def get_note_by_id(note_id):
-    results = []
-    for note in notes:
-        if note["id"] == note_id:
-            results.append(note) #индекс 0 - note
-            results.append(return_leads_to_notes(note["leads"]))
-            return results
-    abort(404)
+    note = db.session.get(Note, note_id)
+    if note is None: abort(404)
+    return note_to_dict(note), 200
 #http://127.0.0.1:5000/notes/1
 
 @app.route('/notes', methods=["POST"])
 def write_a_note():
     data = request.get_json()
-    text,purpose,leads,profile = data["text"],data["purpose"],data["leads"],data["profile"]
-    notes.append({"id":find_max_note_id()+1,"purpose":purpose,"leads":leads,"profile":profile,"text":text})
-    return {"message":"your note was written"}
-"""curl -X POST http://127.0.0.1:5000/notes \
+    text1,purpose1,leads1,profile1=data.get("text"),data.get("purpose"),data.get("leads", []),data.get("profile")
+    if not text1 or not purpose1 or not profile1: abort(400)
+    profile = db.session.get(Profile, profile1)
+    if profile is None: abort(400)
+    leads = []
+    for lead_id in leads1:
+        lead = db.session.get(Lead, lead_id)
+        if lead is None: abort(400)
+        leads.append(lead)
+    note = Note(text=text1, purpose=purpose1, leads=leads, profile=profile)
+    db.session.add(note)
+    db.session.commit()
+    return {"message":"your note was written", "id":note.id}, 201
+r"""curl -X POST http://127.0.0.1:5000/notes \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Позвонить потенциальному клиенту",
@@ -338,21 +268,31 @@ def write_a_note():
 
 @app.route('/notes/<int:note_id>', methods=["DELETE"])
 def complete_note(note_id):
-    idx = find_note_index(note_id)
-    notes.pop(idx)
+    note = db.session.get(Note, note_id)
+    if note is None: abort(404)
+    db.session.delete(note)
+    db.session.commit()
     return {"message":"your note was completed"}
 #curl -X DELETE http://127.0.0.1:5000/notes/1
 
 @app.route('/notes/<int:note_id>', methods=["PUT"])
 def change_note(note_id):
     data = request.get_json()
-    idx = find_note_index(note_id)
-    if notes[idx]["id"] == note_id:
-        data["id"] = note_id
-        notes[idx].update(data)
-        return {"message":"your not was updated"}
-    abort(400)
-"""curl -X PUT http://127.0.0.1:5000/notes/1 \
+    note = db.session.get(Note, note_id)
+    if note is None: abort(404)
+    note.text = data.get("text", note.text)
+    note.purpose = data.get("purpose", note.purpose)
+    if "profile" in data: profile=db.session.get(Profile, data["profile"])
+    if profile is None: abort(400)
+    note.profile = profile
+    if "leads" in data:
+        selected_leads = Lead.query.filter(Lead.id.in_(data["leads"])).all()
+        if len(selected_leads) != len(set(data["leads"])):
+            abort(404)
+        note.leads = selected_leads
+    db.session.commit()
+    return {"message":"your note was edited"}
+r"""curl -X PUT http://127.0.0.1:5000/notes/1 \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Обновленный текст",
@@ -364,8 +304,8 @@ def change_note(note_id):
 
 @app.route('/stats')
 def get_all_stats():
-    count_leads,count_profiles,count_notes=len(leads),len(profiles),len(notes)
-    return [count_leads, count_profiles, count_notes]
+    count_leads,count_profiles,count_notes=db.session.query(Lead).count(),db.session.query(Profile).count(),db.session.query(Note).count()
+    return {"leads":count_leads, "profiles":count_profiles, "notes":count_notes}
 #http://127.0.0.1/stats
 
 if __name__ == "__main__":
