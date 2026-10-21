@@ -138,8 +138,8 @@ sudo docker compose down
 
 ## ВНИМАНИЕ (ДЛЯ ПЕРВОГО ЗАПУСКА)
 - 1 step: DISCOVERY_RUN_ON_START=false RUNNER_COLLECTORS=false sudo bash start.sh создаем профили, чтобы llm активно анализировала их дальше docker compose --profile ollama down
-- 2 step DISCOVERY_RUN_ON_START=true OLLAMA=true sudo bash start.sh дальше docker compose --profile ollama down
-- 3 step после завершения pipeline пересобираем с флагом RUNNER_COLLECTORS=true
+- 2 step: DISCOVERY_RUN_ON_START=true OLLAMA=true sudo bash start.sh дальше docker compose --profile ollama down
+- 3 step: после завершения pipeline пересобираем с флагом RUNNER_COLLECTORS=true
 
 ## Безопасность
 
