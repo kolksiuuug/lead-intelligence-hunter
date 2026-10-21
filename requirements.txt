@@ -6,3 +6,15 @@ Flask-Migrate
 psycopg[binary]
 gunicorn
 python-dotenv
+httpx[socks]
+openai
+openai-agents
+asyncio
+uuid
+requests
+datetime
+requests[socks]
+logging
+scikit-learn
+joblib
+beautifulsoup4

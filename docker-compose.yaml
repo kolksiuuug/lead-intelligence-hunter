@@ -3,6 +3,8 @@ services:
     build: .
     ports:
       - "5000:5000"
+    extra_hosts:
+      - "host.docker.internal:172.18.0.1"
     env_file:
       - .env
     environment:
@@ -21,6 +23,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      PROXY: ${PROXY}
+      OPENROUTER_KEY: ${OPENROUTER_KEY}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,5 +33,76 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+  
+  collector:
+    build: .
+    command: ["python", "-u", "-m", "app.services.discovery_scheduler"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    extra_hosts:
+      - "host.docker.internal:172.18.0.1"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+  
+  ollama:
+    profiles:
+      - ollama
+    image: ollama/ollama
+    gpus: all
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve & until ollama list >/dev/null 2>&1; do
+          sleep 2
+        done
+        ollama pull qwen3.5:4b
+        wait
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped   
+
+  llm:
+    build: .
+    command: ["python", "-u", "-m", "app.llm.server"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+  
+  collectors:
+    build: .
+    command: ["python", "-u", "-m", "app.collectors.collector"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: /api
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+       
 volumes:
   postgres_data:
+  ollama_data:
